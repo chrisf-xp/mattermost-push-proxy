@@ -8,8 +8,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"io/ioutil"
+	"bytes"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -94,6 +97,9 @@ func Start() {
 	}()
 
 	LogInfo("Server is listening on " + CfgPP.ListenAddress)
+	if CfgPP.EnableForward {
+		LogInfo("Server is forwarding to " + CfgPP.ForwardAddress)
+	}
 }
 
 func Stop() {
@@ -114,7 +120,15 @@ func responseTimeMiddleware(f func(w http.ResponseWriter, r *http.Request)) func
 }
 
 func handleSendNotification(w http.ResponseWriter, r *http.Request) {
-	msg := PushNotificationFromJson(r.Body)
+	// Forward Request
+	buf, _ := ioutil.ReadAll(r.Body)
+	body := ioutil.NopCloser(bytes.NewBuffer(buf))
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
+	if CfgPP.EnableForward {
+		go ForwardRequest(r)
+	}
+
+	msg := PushNotificationFromJson(body) // changed from "...omJson(r.Body)"
 
 	if msg == nil {
 		rMsg := LogError("Failed to read message body")
@@ -183,4 +197,41 @@ func GetIpAddress(r *http.Request) string {
 	}
 
 	return address
+}
+
+/* forward request to other push proxy -> from CfgPP.ForwardAddress
+*/
+func ForwardRequest(r *http.Request) {
+	//buf, _ := ioutil.ReadAll(req.Body)
+	//body := ioutil.NopCloser(bytes.NewBuffer(buf))
+	oUrl := r.URL
+	newUrl, errUrl := url.ParseRequestURI(CfgPP.ForwardAddress)
+	if errUrl != nil {
+		LogError("FORWARD: " + errUrl.Error())
+		return
+	}
+	oUrl.Host = newUrl.Host
+	oUrl.Scheme = "http"
+
+    proxyReq, err := http.NewRequest(r.Method, oUrl.String(), r.Body)
+    if err != nil {
+		LogError("FORWARD: " + err.Error())
+		return
+    }
+
+    proxyReq.Header.Set("Host", r.Host)
+
+    for header, values := range r.Header {
+        for _, value := range values {
+            proxyReq.Header.Add(header, value)
+        }
+    }
+
+    client := &http.Client{}
+    proxyRes, err := client.Do(proxyReq)
+	if err != nil {
+		LogError("FORWARD: " + err.Error())
+		return
+	}
+	LogInfo("FORWARD: " + proxyRes.Status)
 }

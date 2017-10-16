@@ -4,6 +4,8 @@
     "ThrottleMemoryStoreSize":50000,
     "ThrottleVaryByHeader":"X-Forwarded-For",
     "EnableMetrics": false,
+    "EnableForward": false,
+    "ForwardAddress": "https://push-test.mattermost.com/",
     "ApplePushSettings":[
         {
             "Type":"apple",

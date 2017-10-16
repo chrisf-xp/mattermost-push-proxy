@@ -1,10 +1,10 @@
-# Mattermost Push Notifications Service 
+# Mattermost Push Notifications Service
 
-A server for proxying push notifications to iOS and Android devices from Mattermost, [a self-hosted team communication solution](http://www.mattermost.org/). 
+A server for proxying push notifications to iOS and Android devices from Mattermost, [a self-hosted team communication solution](http://www.mattermost.org/).
 
 See our [mobile applications deployment guide](https://docs.mattermost.com/deployment/push.html) for details on how MPNS works with your Mattermost server and mobile applications.
 
-For organizations who want to keep internal communications behind their firewall, this service encrypts notification messages with a private key under your control before sending them to Apple's public push notification service for delivery to your iOS devices. 
+For organizations who want to keep internal communications behind their firewall, this service encrypts notification messages with a private key under your control before sending them to Apple's public push notification service for delivery to your iOS devices.
 
 See our [mobile applications deployment guide](https://docs.mattermost.com/deployment/push.html) for details on how MPNS works with your Mattermost server and mobile applications.
 
@@ -22,7 +22,7 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
   - `openssl x509 -in aps.cer -inform DER -out aps_production.pem`
 3. Double click `aps_production.cer` to install it into the keychain tool
 4. Right click the private cert in keychain access and export to .p12
-5. Extract the private key from the certificate: 
+5. Extract the private key from the certificate:
   - `openssl pkcs12 -in Certificates.p12 -out aps_production_priv.pem -nodes -clcerts`
 6. Verifying the certificate works with apple:
   - `openssl s_client -connect gateway.push.apple.com:2195 -cert aps_production.pem -key aps_production_priv.pem`
@@ -30,12 +30,12 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
 ### Set Up Push Proxy Server
 
 1. For the sake of making this guide simple we located the files at
-   `/home/ubuntu/mattermost-push-proxy`. 
+   `/home/ubuntu/mattermost-push-proxy`.
 2. We have also elected to run the Push Proxy Server as the `ubuntu` account for simplicity. We recommend setting up and running the service under a `mattermost-push-proxy` user account with limited permissions.
 3. Download Mattermost Notification Server v2.0 by typing:
 
    -   `wget https://github.com/mattermost/mattermost-push-proxy/releases/download/vX.X/mattermost-push-proxy.tar.gz`
-   
+
 4. Unzip the Push Proxy Server by typing:
 
    -  `tar -xvzf mattermost-push-proxy.tar.gz`
@@ -49,14 +49,17 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
    - For `"AndroidApiKey": ""`, set the key generated from Google Cloud Messaging, in two places.
    - Replace `"ApplePushTopic": "com.mattermost.Mattermost"` with the iOS bundle ID of your custom mobile app, in two places.
    - Replace `"ApplePushCertPassword": ""` if your certificate has a password, in two places. Otherwise leave it blank.
-   - For example: 
-   
+   - If you want incoming requests to be also forwarded to another Push Proxy Server, set `"EnableForward": true`, and `"ForwardAddress": "addressOfDesiredPushProxy"`
+   - For example:
+
      ``` javascript
      {
       "ListenAddress":":8066",
       "ThrottlePerSec":300,
       "ThrottleMemoryStoreSize":50000,
       "ThrottleVaryByHeader":"X-Forwarded-For",
+      "EnableForward": false,
+      "ForwardAddress": "https://push-test.mattermost.com/",
       "ApplePushSettings":[
         {
             "Type":"apple",
@@ -92,7 +95,7 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
    -  `sudo touch /etc/init/mattermost-push-proxy.conf`
    -  `sudo vi /etc/init/mattermost-push-proxy.conf`
    -  Copy the following lines into `/etc/init/mattermost-push-proxy.conf`
-     
+
      ```
      start on runlevel [2345]
      stop on runlevel [016]
@@ -102,19 +105,19 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
      console log
      exec bin/mattermost-push-proxy | logger
      ```
-     
+
    - You can manage the process by typing:
      -  `sudo start mattermost-push-proxy`
    - You can also stop the process by running the command `sudo stop mattermost-push-proxy`, but we will skip this step for now
 
-   
+
 7. Test the Push Proxy Server
 
-   - Verify the server is functioning normally and test the push notifications using curl: 
+   - Verify the server is functioning normally and test the push notifications using curl:
      - `curl http://127.0.0.1:8066/api/v1/send_push -X POST -H "Content-Type: application/json" -d '{ "message":"test", "badge": 1, "platform":"apple", "server_id":"MATTERMOST_DIAG_ID", "device_id":"IPHONE_DEVICE_ID"}'`
      - Replace MATTERMOST_DIAG_ID with the value found by running the SQL query:
        - `SELECT * FROM Systems WHERE Name = 'DiagnosticId';`
-     - Replace IPHONE_DEVICE_ID with your device ID, which can be found using: 
+     - Replace IPHONE_DEVICE_ID with your device ID, which can be found using:
       ```
       SELECT
          Email, DeviceId
@@ -127,13 +130,13 @@ See our [mobile applications deployment guide](https://docs.mattermost.com/deplo
             AND Email = 'test@example.com'`
      ```
    - You can also verify push notifications are working by opening your Mattermost site and mentioning a user who has push notifications enabled in Account Settings > Notifications > Mobile Push Notifications
-   - To view the log file, use: 
-     
+   - To view the log file, use:
+
      ```
      sudo tail -n 1000 /var/log/upstart/
      mattermost-push-proxy.log
      ```
 
-### Reporting issues 
+### Reporting issues
 
 For issues with repro steps, please report to https://github.com/mattermost/platform/issues

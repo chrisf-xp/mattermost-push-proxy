@@ -26,6 +26,8 @@ const (
 	HEADER_REAL_IP             = "X-Real-IP"
 	WAIT_FOR_SERVER_SHUTDOWN   = time.Second * 5
 	CONNECTION_TIMEOUT_SECONDS = 60
+	FORWARDER_COUNT			   = 2
+	FORWARDER_TIMEOUT		   = 20
 )
 
 type NotificationServer interface {
@@ -36,6 +38,8 @@ type NotificationServer interface {
 var servers map[string]NotificationServer = make(map[string]NotificationServer)
 
 var gracefulServer *graceful.Server
+
+var forwardingChannel = make(chan *http.Request, 500)
 
 func Start() {
 	LogInfo("Push proxy server is initializing...")
@@ -95,6 +99,12 @@ func Start() {
 			LogCritical(err.Error())
 		}
 	}()
+
+	if CfgPP.EnableForward {
+		for i := 0; i < FORWARDER_COUNT; i++ {
+			MakeForwarderClient()
+		}
+	}
 
 	LogInfo("Server is listening on " + CfgPP.ListenAddress)
 	if CfgPP.EnableForward {
@@ -199,6 +209,23 @@ func GetIpAddress(r *http.Request) string {
 	return address
 }
 
+func MakeForwarderClient() {
+	go func() { // forwarder Client
+		client := &http.Client{}
+		client.Timeout = time.Duration(FORWARDER_TIMEOUT * time.Second)
+		var request *http.Request
+		for request = range forwardingChannel { //request = <- forwardingChannel //
+			proxyRes, err := client.Do(request)
+
+			if err != nil {
+				LogError("FORWARDER: " + err.Error())
+			}else {
+				LogInfo("FORWARDER: " + proxyRes.Status)
+			}
+		}
+	}()
+}
+
 /* forward request to other push proxy -> from CfgPP.ForwardAddress
 */
 func ForwardRequest(r *http.Request) {
@@ -226,12 +253,18 @@ func ForwardRequest(r *http.Request) {
             proxyReq.Header.Add(header, value)
         }
     }
+	select {
+	case forwardingChannel <- proxyReq:
+	default:
+		LogError("FORWARD: " + "Can't forward, forwarding buffer full")
+	}
 
-    client := &http.Client{}
+	/*
+    client := &http.Client{}		// TODO get client out of here to not always create a client
     proxyRes, err := client.Do(proxyReq)
 	if err != nil {
 		LogError("FORWARD: " + err.Error())
 		return
 	}
-	LogInfo("FORWARD: " + proxyRes.Status)
+	LogInfo("FORWARD: " + proxyRes.Status)*/
 }
